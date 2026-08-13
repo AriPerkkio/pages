@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Package Treemap</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --hairline: #e1e0d9;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+    --tooltip-bg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #898781;
+      --hairline: #2c2c2a;
+      --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --series-4: #c98500;
+      --tooltip-bg: #242423;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --hairline: #2c2c2a;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --tooltip-bg: #242423;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--surface-1);
+  }
+  header h1 { font-size: 14px; margin: 0; font-weight: 650; }
+  header .total { color: var(--text-secondary); }
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--hairline);
+    border-radius: 7px;
+    overflow: hidden;
+  }
+  .seg button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    padding: 4px 12px;
+    cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--hairline); }
+  .seg button[aria-pressed="true"] {
+    background: var(--page);
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+  #search {
+    font: inherit;
+    color: var(--text-primary);
+    background: var(--page);
+    border: 1px solid var(--hairline);
+    border-radius: 7px;
+    padding: 4px 10px;
+    width: 200px;
+  }
+  #search::placeholder { color: var(--text-muted); }
+  #matchcount { color: var(--text-muted); min-width: 90px; }
+  #legend { display: flex; gap: 14px; align-items: center; margin-left: auto; }
+  #legend .item { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+  #legend .chip { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  #crumbs {
+    padding: 6px 14px;
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--hairline);
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow-x: auto;
+  }
+  #crumbs a { color: var(--text-secondary); text-decoration: none; cursor: pointer; }
+  #crumbs a:hover { text-decoration: underline; }
+  #crumbs .cur { color: var(--text-primary); font-weight: 600; }
+  #crumbs .hint { float: right; color: var(--text-muted); }
+  #stage { position: relative; flex: 1; min-height: 0; }
+  #map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: pointer; }
+  #tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--tooltip-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    padding: 8px 10px;
+    max-width: 380px;
+    display: none;
+    z-index: 10;
+  }
+  #tooltip .tname { font-weight: 650; word-break: break-all; }
+  #tooltip .tpath { color: var(--text-muted); font-size: 12px; word-break: break-all; margin-bottom: 4px; }
+  #tooltip table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  #tooltip td { padding: 1px 0; }
+  #tooltip td:first-child { color: var(--text-secondary); padding-right: 14px; }
+  #tooltip td:last-child { text-align: right; }
+  #tablepanel {
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+    background: var(--surface-1);
+    display: none;
+    z-index: 5;
+    padding: 8px 14px 20px;
+  }
+  #tablepanel table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  #tablepanel th {
+    text-align: left;
+    color: var(--text-muted);
+    font-weight: 600;
+    border-bottom: 1px solid var(--hairline);
+    padding: 6px 16px 6px 0;
+    position: sticky; top: 0;
+    background: var(--surface-1);
+  }
+  #tablepanel td { padding: 4px 16px 4px 0; border-bottom: 1px solid var(--hairline); }
+  #tablepanel td.num, #tablepanel th.num { text-align: right; }
+  #tablepanel td.path { word-break: break-all; }
+  #tablepanel .note { color: var(--text-muted); padding: 8px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">package</h1>
+  <span class="total" id="total"></span>
+  <span class="seg" role="group" aria-label="Size metric">
+    <button id="btn-raw" aria-pressed="true">Raw</button>
+    <button id="btn-gzip" aria-pressed="false">Gzip</button>
+  </span>
+  <span class="seg" role="group" aria-label="View">
+    <button id="btn-map" aria-pressed="true">Treemap</button>
+    <button id="btn-table" aria-pressed="false">Table</button>
+  </span>
+  <input id="search" type="search" placeholder="Find file or folder…" aria-label="Search">
+  <span id="matchcount"></span>
+  <span id="legend"></span>
+</header>
+<div id="crumbs"></div>
+<div id="stage">
+  <canvas id="map"></canvas>
+  <div id="tooltip" role="status"></div>
+  <div id="tablepanel"></div>
+</div>
+<script>
+'use strict';
+const DATA = {"n":"node_modules","v":33706197,"g":8813514,"c":[{"n":"lightningcss","v":16232340,"g":3859091,"c":[{"n":"lightningcss_node.wasm","v":15844785,"g":3784392},{"n":"ast.d.ts","v":213707,"g":33056},{"n":"node_modules","v":89849,"g":16788,"c":[{"n":"napi-wasm","v":89849,"g":16788,"c":[{"n":"index.js","v":42418,"g":7252},{"n":"index.mjs","v":42375,"g":7240},{"n":"README.md","v":4246,"g":1907},{"n":"package.json","v":810,"g":389}]}]},{"n":"index.d.ts","v":18953,"g":5199},{"n":"index.cjs","v":18220,"g":4915},{"n":"wasm-node.cjs","v":17211,"g":4592},{"n":"composeVisitors.js","v":11387,"g":2466},{"n":"README.md","v":6062,"g":2529},{"n":"index.mjs","v":3342,"g":1172},{"n":"async.mjs","v":2673,"g":1061},{"n":"wasm-node.mjs","v":2204,"g":847},{"n":"package.json","v":1186,"g":506},{"n":"browserslistToTargets.js","v":921,"g":426},{"n":"targets.d.ts","v":867,"g":488},{"n":"flags.js","v":671,"g":418},{"n":"import.meta.url-polyfill.js","v":302,"g":236}]},{"n":"@rolldown","v":10788739,"g":3476838,"c":[{"n":"binding-wasm32-wasi","v":10763046,"g":3468721,"c":[{"n":"rolldown-binding.wasm32-wasi.wasm","v":10598558,"g":3426811},{"n":"rolldown-binding.wasi.d.cts","v":99171,"g":23944},{"n":"rolldown-binding.wasi.cjs","v":35827,"g":9277},{"n":"rolldown-binding.wasi-browser.js","v":24871,"g":6650},{"n":"wasi-worker.mjs","v":1813,"g":782},{"n":"wasi-worker-browser.mjs","v":1566,"g":657},{"n":"package.json","v":1136,"g":504},{"n":"README.md","v":104,"g":96}]},{"n":"pluginutils","v":25693,"g":8117,"c":[{"n":"dist","v":17435,"g":5076,"c":[{"n":"filter-B_mD-HGz.mjs","v":9099,"g":2533},{"n":"filter","v":7162,"g":2038,"c":[{"n":"index.d.mts","v":6612,"g":1759},{"n":"index.mjs","v":550,"g":279}]},{"n":"index.d.mts","v":625,"g":227},{"n":"index.mjs","v":549,"g":278}]},{"n":"README.md","v":6177,"g":1931},{"n":"LICENSE","v":1106,"g":681},{"n":"package.json","v":975,"g":429}]}]},{"n":"vite","v":2338849,"g":578505,"c":[{"n":"dist","v":2196066,"g":556461,"c":[{"n":"node","v":2101747,"g":529463,"c":[{"n":"chunks","v":1837579,"g":457887,"c":[{"n":"node.js","v":1352087,"g":348346},{"n":"dist.js","v":246598,"g":57758},{"n":"build.js","v":205664,"g":43731},{"n":"postcss-import.js","v":18432,"g":4289},{"n":"lib.js","v":11710,"g":2601},{"n":"moduleRunnerTransport.d.ts","v":3088,"g":1162}]},{"n":"index.d.ts","v":165420,"g":42778},{"n":"module-runner.js","v":54444,"g":15602},{"n":"cli.js","v":29852,"g":8640},{"n":"module-runner.d.ts","v":11507,"g":3456},{"n":"index.js","v":2670,"g":891},{"n":"internal.js","v":138,"g":105},{"n":"internal.d.ts","v":137,"g":104}]},{"n":"client","v":94319,"g":26998,"c":[{"n":"bundledDevClient.mjs","v":55193,"g":15403},{"n":"client.mjs","v":38514,"g":11262},{"n":"env.mjs","v":612,"g":333}]}]},{"n":"LICENSE.md","v":112425,"g":11221},{"n":"types","v":14411,"g":5652,"c":[{"n":"internal","v":3787,"g":1541,"c":[{"n":"cssPreprocessorOptions.d.ts","v":1420,"g":569},{"n":"rollupTypeCompat.d.ts","v":791,"g":203},{"n":"esbuildOptions.d.ts","v":672,"g":295},{"n":"lightningcssOptions.d.ts","v":520,"g":299},{"n":"terserOptions.d.ts","v":384,"g":175}]},{"n":"importGlob.d.ts","v":3477,"g":1141},{"n":"customEvent.d.ts","v":2028,"g":749},{"n":"hmrPayload.d.ts","v":1790,"g":672},{"n":"metadata.d.ts","v":1133,"g":499},{"n":"hot.d.ts","v":1063,"g":371},{"n":"importMeta.d.ts","v":884,"g":485},{"n":"import-meta.d.ts","v":249,"g":194}]},{"n":"client.d.ts","v":5231,"g":759},{"n":"package.json","v":5083,"g":1700},{"n":"bin","v":4413,"g":1921,"c":[{"n":"vite.js","v":2574,"g":1110},{"n":"openChrome.js","v":1839,"g":811}]},{"n":"README.md","v":1179,"g":710},{"n":"misc","v":41,"g":81,"c":[{"n":"false.js","v":21,"g":41},{"n":"true.js","v":20,"g":40}]}]},{"n":"@emnapi","v":1187516,"g":176101,"c":[{"n":"core","v":872580,"g":108944,"c":[{"n":"dist","v":868275,"g":106996,"c":[{"n":"emnapi-core.full.js","v":368504,"g":43216},{"n":"emnapi-core.js","v":336676,"g":37183},{"n":"plugins","v":137713,"g":20641,"c":[{"n":"v8.js","v":49916,"g":6392},{"n":"threadsafe-function.js","v":47241,"g":7569},{"n":"async-work.js","v":39624,"g":6055},{"n":"index.d.ts","v":221,"g":148},{"n":"threadsafe-function.d.ts","v":186,"g":123},{"n":"v8.d.ts","v":186,"g":123},{"n":"async-work.d.ts","v":185,"g":122},{"n":"index.js","v":154,"g":109}]},{"n":"emnapi-core.d.ts","v":12691,"g":2978},{"n":"emnapi-core.full.d.ts","v":12691,"g":2978}]},{"n":"rollup.config.js","v":2043,"g":796},{"n":"package.json","v":1103,"g":425},{"n":"LICENSE","v":1076,"g":659},{"n":"README.md","v":83,"g":68}]},{"n":"runtime","v":267551,"g":55749,"c":[{"n":"dist","v":260437,"g":53117,"c":[{"n":"emnapi.js.map","v":157344,"g":32539},{"n":"emnapi.js","v":73889,"g":14275},{"n":"emnapi.d.ts","v":29204,"g":6303}]},{"n":"index.cjs","v":3977,"g":1072},{"n":"LICENSE","v":1076,"g":659},{"n":"rollup.config.js","v":1062,"g":446},{"n":"package.json","v":916,"g":387},{"n":"README.md","v":83,"g":68}]},{"n":"wasi-threads","v":47385,"g":11408,"c":[{"n":"dist","v":39398,"g":8372,"c":[{"n":"wasi-threads.js","v":31891,"g":6628},{"n":"wasi-threads.d.ts","v":7507,"g":1744}]},{"n":"README.md","v":5888,"g":1859},{"n":"LICENSE","v":1076,"g":659},{"n":"package.json","v":885,"g":393},{"n":"rollup.config.js","v":138,"g":125}]}]},{"n":"rolldown","v":835523,"g":205055,"c":[{"n":"dist","v":825258,"g":201200,"c":[{"n":"shared","v":602078,"g":148897,"c":[{"n":"create-bundler-option-wRiQzEJ3.mjs","v":151886,"g":32834},{"n":"define-config-Dsp5YQR4.d.mts","v":151171,"g":38741},{"n":"bindingify-input-options-C-Zsy1EG.mjs","v":85925,"g":20371},{"n":"binding-CVtkJvyl.d.mts","v":65371,"g":17237},{"n":"prompt-CH6TK0bC.mjs","v":49939,"g":13132},{"n":"binding-Zhafd14U.mjs","v":33593,"g":4473},{"n":"watch-BNCfUBmW.mjs","v":12019,"g":3982},{"n":"dist-DKbukT1H.mjs","v":7739,"g":2571},{"n":"transform-WmU_cI8e.d.mts","v":6048,"g":1657},{"n":"logs-DmYCAKcW.mjs","v":6019,"g":2205},{"n":"rolldown-DiYVDns9.mjs","v":5301,"g":1908},{"n":"load-config-63nAW5KO.mjs","v":5241,"g":2032},{"n":"resolve-tsconfig-SPewz4V3.mjs","v":4731,"g":1349},{"n":"error-CVc7IgvG.mjs","v":2926,"g":1097},{"n":"constructors-CGzna3vk.d.mts","v":2921,"g":782},{"n":"constructors-u6EEiG8n.mjs","v":2910,"g":839},{"n":"parse-DnWvq9XZ.mjs","v":2628,"g":1050},{"n":"normalize-string-or-regex-BxRYnPRv.mjs","v":2131,"g":894},{"n":"logging-xuHO4mAy.d.mts","v":1455,"g":618},{"n":"misc-DOSKtd97.mjs","v":1108,"g":539},{"n":"get-log-filter-AjBknEEO.d.mts","v":886,"g":471},{"n":"define-config-Demdg3_4.mjs","v":130,"g":115}]},{"n":"utils-index.mjs","v":70392,"g":7933},{"n":"cli.mjs","v":39744,"g":11766},{"n":"utils-index.d.mts","v":24324,"g":3516},{"n":"experimental-index.mjs","v":13981,"g":4373},{"n":"experimental-index.d.mts","v":13218,"g":4064},{"n":"filter-index.mjs","v":11189,"g":3115},{"n":"experimental-runtime.mjs","v":7561,"g":2389},{"n":"filter-index.d.mts","v":6817,"g":1858},{"n":"experimental-runtime-types.d.ts","v":5773,"g":1660},{"n":"experimental-runtime.d.ts","v":5773,"g":1660},{"n":"index.d.mts","v":5240,"g":1500},{"n":"experimental-runtime-base.mjs","v":3445,"g":1243},{"n":"experimental-default-runtime.mjs","v":3177,"g":1305},{"n":"parse-ast-index.mjs","v":2148,"g":857},{"n":"get-log-filter.mjs","v":2037,"g":871},{"n":"index.mjs","v":1642,"g":793},{"n":"parallel-plugin-worker.mjs","v":1113,"g":551},{"n":"parse-ast-index.d.mts","v":1106,"g":432},{"n":"plugins-index.mjs","v":1082,"g":558},{"n":"config.d.mts","v":1080,"g":563},{"n":"plugins-index.d.mts","v":1000,"g":480},{"n":"parallel-plugin.d.mts","v":609,"g":285},{"n":"config.mjs","v":267,"g":172},{"n":"get-log-filter.d.mts","v":257,"g":165},{"n":"parallel-plugin.mjs","v":187,"g":136},{"n":"cli.d.mts","v":9,"g":29},{"n":"parallel-plugin-worker.d.mts","v":9,"g":29}]},{"n":"package.json","v":6043,"g":1803},{"n":"THIRD-PARTY-LICENSE","v":2209,"g":770},{"n":"LICENSE","v":1302,"g":797},{"n":"README.md","v":665,"g":419},{"n":"bin","v":46,"g":66,"c":[{"n":"cli.mjs","v":46,"g":66}]}]},{"n":"@tybys","v":825080,"g":148048,"c":[{"n":"wasm-util","v":825080,"g":148048,"c":[{"n":"dist","v":522015,"g":91401,"c":[{"n":"wasm-util.js","v":144248,"g":21610},{"n":"wasm-util.esm-bundler.js","v":131896,"g":21023},{"n":"wasm-util.esm.js","v":131826,"g":21003},{"n":"wasm-util.min.js","v":48948,"g":12432},{"n":"wasm-util.esm.min.js","v":48695,"g":12284},{"n":"wasm-util.d.ts","v":16062,"g":2800},{"n":"tsdoc-metadata.json","v":340,"g":249}]},{"n":"lib","v":297072,"g":54321,"c":[{"n":"cjs","v":153467,"g":28103,"c":[{"n":"wasi","v":139067,"g":23726,"c":[{"n":"preview1.js","v":80296,"g":9747},{"n":"path.js","v":11917,"g":3204},{"n":"types.js","v":11826,"g":2347},{"n":"fd.js","v":10239,"g":2333},{"n":"index.js","v":7613,"g":2023},{"n":"error.js","v":6114,"g":1582},{"n":"rights.js","v":6015,"g":1084},{"n":"util.js","v":4940,"g":1283},{"n":"fs.js","v":107,"g":123}]},{"n":"asyncify.js","v":6028,"g":1697},{"n":"load.js","v":3934,"g":944},{"n":"jspi.js","v":1992,"g":732},{"n":"memory.js","v":1512,"g":516},{"n":"index.js","v":492,"g":233},{"n":"webassembly.js","v":442,"g":255}]},{"n":"mjs","v":143605,"g":26218,"c":[{"n":"wasi","v":130856,"g":22459,"c":[{"n":"preview1.mjs","v":77090,"g":9583},{"n":"path.mjs","v":11684,"g":3096},{"n":"types.mjs","v":11208,"g":2162},{"n":"fd.mjs","v":9389,"g":2158},{"n":"index.mjs","v":7300,"g":1929},{"n":"error.mjs","v":5300,"g":1483},{"n":"rights.mjs","v":4740,"g":922},{"n":"util.mjs","v":4134,"g":1095},{"n":"fs.mjs","v":11,"g":31}]},{"n":"asyncify.mjs","v":5847,"g":1628},{"n":"load.mjs","v":3484,"g":822},{"n":"jspi.mjs","v":1693,"g":614},{"n":"memory.mjs","v":1226,"g":411},{"n":"webassembly.mjs","v":283,"g":165},{"n":"index.mjs","v":216,"g":119}]}]},{"n":"README.md","v":4466,"g":1686},{"n":"package.json","v":1527,"g":640}]}]},{"n":"@napi-rs","v":777079,"g":158719,"c":[{"n":"wasm-runtime","v":777079,"g":158719,"c":[{"n":"dist","v":763994,"g":154283,"c":[{"n":"fs.js","v":636780,"g":133130},{"n":"emnapi-plugins.cjs","v":59960,"g":9449},{"n":"emnapi-plugins.js","v":59884,"g":9407},{"n":"fs-proxy.cjs","v":7370,"g":2297}]},{"n":"fs-proxy.js","v":8492,"g":2398},{"n":"runtime.cjs","v":1542,"g":687},{"n":"package.json","v":1530,"g":658},{"n":"runtime.js","v":1521,"g":693}]}]},{"n":"postcss","v":217775,"g":64509,"c":[{"n":"lib","v":213024,"g":62383,"c":[{"n":"lazy-result.js","v":16273,"g":4085},{"n":"parser.js","v":15168,"g":3503},{"n":"node.d.ts","v":14688,"g":4399},{"n":"container.d.ts","v":14025,"g":3300},{"n":"node.js","v":12643,"g":3274},{"n":"container.js","v":12350,"g":2757},{"n":"stringifier.js","v":11816,"g":3217},{"n":"postcss.d.ts","v":11654,"g":2988},{"n":"map-generator.js","v":10031,"g":2534},{"n":"input.js","v":7274,"g":2177},{"n":"tokenize.js","v":6700,"g":1655},{"n":"css-syntax-error.d.ts","v":6447,"g":1734},{"n":"previous-map.js","v":5130,"g":1770},{"n":"input.d.ts","v":5126,"g":1447},{"n":"lazy-result.d.ts","v":4939,"g":1247},{"n":"result.d.ts","v":4346,"g":1513},{"n":"declaration.d.ts","v":3833,"g":1250},{"n":"css-syntax-error.js","v":3402,"g":1077},{"n":"at-rule.d.ts","v":3356,"g":1193},{"n":"processor.d.ts","v":3345,"g":1231},{"n":"warning.d.ts","v":2924,"g":867},{"n":"postcss.js","v":2898,"g":1032},{"n":"rule.d.ts","v":2879,"g":1044},{"n":"fromJSON.js","v":2810,"g":1006},{"n":"no-work-result.js","v":2619,"g":883},{"n":"root.d.ts","v":2253,"g":898},{"n":"document.d.ts","v":1884,"g":819},{"n":"previous-map.d.ts","v":1757,"g":748},{"n":"processor.js","v":1739,"g":662},{"n":"comment.d.ts","v":1680,"g":723},{"n":"root.js","v":1606,"g":607},{"n":"no-work-result.d.ts","v":1503,"g":639},{"n":"list.d.ts","v":1424,"g":481},{"n":"terminal-highlight.js","v":1399,"g":563},{"n":"stringifier.d.ts","v":1360,"g":465},{"n":"list.js","v":1273,"g":438},{"n":"warning.js","v":1151,"g":540},{"n":"parse.js","v":1147,"g":415},{"n":"postcss.d.mts","v":1046,"g":478},{"n":"postcss.mjs","v":980,"g":287},{"n":"result.js","v":738,"g":338},{"n":"document.js","v":654,"g":343},{"n":"rule.js","v":569,"g":315},{"n":"declaration.js","v":495,"g":275},{"n":"at-rule.js","v":471,"g":234},{"n":"warn-once.js","v":256,"g":180},{"n":"stringify.js","v":213,"g":145},{"n":"comment.js","v":203,"g":152},{"n":"stringify.d.ts","v":163,"g":124},{"n":"fromJSON.d.ts","v":160,"g":132},{"n":"parse.d.ts","v":133,"g":117},{"n":"symbols.js","v":91,"g":82}]},{"n":"package.json","v":2497,"g":795},{"n":"README.md","v":1159,"g":656},{"n":"LICENSE","v":1095,"g":675}]},{"n":"source-map-js","v":139872,"g":40134,"c":[{"n":"lib","v":105945,"g":29697,"c":[{"n":"source-map-consumer.js","v":41580,"g":9306},{"n":"util.js","v":15403,"g":4520},{"n":"source-map-generator.js","v":14933,"g":3791},{"n":"source-node.js","v":13808,"g":3746},{"n":"base64-vlq.js","v":4714,"g":2079},{"n":"binary-search.js","v":4249,"g":1411},{"n":"quick-sort.js","v":4068,"g":1689},{"n":"array-set.js","v":3197,"g":1215},{"n":"mapping-list.js","v":2339,"g":1028},{"n":"base64.js","v":1540,"g":738},{"n":"source-map-generator.d.ts","v":41,"g":61},{"n":"source-map-consumer.d.ts","v":40,"g":60},{"n":"source-node.d.ts","v":33,"g":53}]},{"n":"README.md","v":26040,"g":7350},{"n":"source-map.d.ts","v":3408,"g":888},{"n":"package.json","v":2548,"g":1144},{"n":"LICENSE","v":1526,"g":816},{"n":"source-map.js","v":405,"g":239}]},{"n":"picomatch","v":92989,"g":26330,"c":[{"n":"lib","v":61125,"g":15898,"c":[{"n":"parse.js","v":34668,"g":8232},{"n":"picomatch.js","v":10722,"g":2950},{"n":"scan.js","v":9189,"g":2147},{"n":"constants.js","v":4552,"g":1761},{"n":"utils.js","v":1994,"g":808}]},{"n":"README.md","v":28319,"g":8585},{"n":"package.json","v":1915,"g":821},{"n":"LICENSE","v":1091,"g":671},{"n":"index.js","v":479,"g":275},{"n":"posix.js","v":60,"g":80}]},{"n":"tslib","v":90359,"g":26393,"c":[{"n":"tslib.js","v":23382,"g":6192},{"n":"tslib.es6.js","v":19215,"g":5569},{"n":"tslib.d.ts","v":18317,"g":4243},{"n":"tslib.es6.mjs","v":17648,"g":5412},{"n":"README.md","v":4033,"g":1532},{"n":"SECURITY.md","v":2757,"g":1248},{"n":"modules","v":2243,"g":779,"c":[{"n":"index.js","v":1416,"g":335},{"n":"index.d.ts","v":801,"g":398},{"n":"package.json","v":26,"g":46}]},{"n":"package.json","v":1219,"g":431},{"n":"CopyrightNotice.txt","v":822,"g":453},{"n":"LICENSE.txt","v":655,"g":434},{"n":"tslib.es6.html","v":36,"g":52},{"n":"tslib.html","v":32,"g":48}]},{"n":"fdir","v":53291,"g":15520,"c":[{"n":"dist","v":45693,"g":12235,"c":[{"n":"index.cjs","v":18210,"g":4661},{"n":"index.mjs","v":17225,"g":4286},{"n":"index.d.cts","v":5129,"g":1644},{"n":"index.d.mts","v":5129,"g":1644}]},{"n":"README.md","v":3851,"g":1652},{"n":"package.json","v":2694,"g":1002},{"n":"LICENSE","v":1053,"g":631}]},{"n":"@oxc-project","v":44577,"g":7483,"c":[{"n":"types","v":44577,"g":7483,"c":[{"n":"types.d.ts","v":42826,"g":6426},{"n":"LICENSE","v":1119,"g":682},{"n":"package.json","v":577,"g":307},{"n":"README.md","v":55,"g":68}]}]},{"n":"tinyglobby","v":39288,"g":13550,"c":[{"n":"dist","v":35520,"g":11683,"c":[{"n":"index.cjs","v":13706,"g":4474},{"n":"index.mjs","v":12438,"g":4007},{"n":"index.d.cts","v":4688,"g":1601},{"n":"index.d.mts","v":4688,"g":1601}]},{"n":"package.json","v":1761,"g":692},{"n":"LICENSE","v":1076,"g":666},{"n":"README.md","v":931,"g":509}]},{"n":"nanoid","v":25198,"g":11365,"c":[{"n":"async","v":6855,"g":3088,"c":[{"n":"index.d.ts","v":1505,"g":635},{"n":"index.cjs","v":1087,"g":504},{"n":"index.js","v":1070,"g":496},{"n":"index.browser.cjs","v":1031,"g":452},{"n":"index.browser.js","v":1021,"g":445},{"n":"index.native.js","v":908,"g":432},{"n":"package.json","v":233,"g":124}]},{"n":"package.json","v":2283,"g":599},{"n":"index.d.cts","v":2252,"g":782},{"n":"index.d.ts","v":2252,"g":782},{"n":"non-secure","v":2108,"g":1124,"c":[{"n":"index.d.ts","v":983,"g":453},{"n":"index.cjs","v":518,"g":299},{"n":"index.js","v":508,"g":292},{"n":"package.json","v":99,"g":80}]},{"n":"README.md","v":1552,"g":989},{"n":"index.js","v":1498,"g":656},{"n":"index.cjs","v":1454,"g":644},{"n":"bin","v":1129,"g":539,"c":[{"n":"nanoid.cjs","v":1129,"g":539}]},{"n":"index.browser.cjs","v":1117,"g":503},{"n":"index.browser.js","v":1103,"g":494},{"n":"LICENSE","v":1095,"g":677},{"n":"url-alphabet","v":331,"g":330,"c":[{"n":"index.cjs","v":121,"g":130},{"n":"index.js","v":111,"g":120},{"n":"package.json","v":99,"g":80}]},{"n":"nanoid.js","v":169,"g":158}]},{"n":".package-lock.json","v":11349,"g":3070},{"n":"picocolors","v":6373,"g":2803,"c":[{"n":"picocolors.js","v":2663,"g":807},{"n":"types.d.ts","v":1013,"g":321},{"n":"LICENSE","v":787,"g":518},{"n":"README.md","v":622,"g":442},{"n":"picocolors.browser.js","v":598,"g":302},{"n":"package.json","v":552,"g":290},{"n":"picocolors.d.ts","v":138,"g":123}]}]};
+
+/* ---------- model ---------- */
+let metric = 'v';            // 'v' raw bytes | 'g' gzip bytes
+let currentRoot = DATA;
+let hovered = null;
+let query = '';
+let tableMode = false;
+
+(function link(node, parent, depth) {
+  node.parent = parent;
+  node.depth = depth;
+  if (node.c) for (const c of node.c) link(c, node, depth + 1);
+})(DATA, null, 0);
+
+// top-level color slots, assigned in fixed size order (they arrive sorted)
+const SLOTS = ['--series-1', '--series-2', '--series-3', '--series-4'];
+const slotOf = new Map();
+DATA.c.forEach((c, i) => slotOf.set(c, SLOTS[Math.min(i, SLOTS.length - 1)]));
+function topAncestor(node) {
+  let n = node;
+  while (n.parent && n.parent !== DATA) n = n.parent;
+  return n === DATA ? null : n;
+}
+
+function fmt(bytes) {
+  if (bytes >= 1024 * 1024) return (bytes / 1048576).toFixed(2) + ' MB';
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return bytes + ' B';
+}
+function pct(part, whole) { return whole ? (100 * part / whole).toFixed(part / whole < 0.001 ? 2 : 1) + '%' : '—'; }
+function pathOf(node) {
+  const parts = [];
+  for (let n = node; n; n = n.parent) parts.unshift(n.n);
+  return parts.join('/');
+}
+
+/* ---------- theme-aware colors ---------- */
+let css = {};
+function readTheme() {
+  const s = getComputedStyle(document.documentElement);
+  css = {
+    surface: s.getPropertyValue('--surface-1').trim(),
+    page: s.getPropertyValue('--page').trim(),
+    ink: s.getPropertyValue('--text-primary').trim(),
+    ink2: s.getPropertyValue('--text-secondary').trim(),
+    muted: s.getPropertyValue('--text-muted').trim(),
+    hairline: s.getPropertyValue('--hairline').trim(),
+    series: SLOTS.map(v => s.getPropertyValue(v).trim()),
+    dark: matchMedia('(prefers-color-scheme: dark)').matches
+      ? document.documentElement.dataset.theme !== 'light'
+      : document.documentElement.dataset.theme === 'dark',
+  };
+}
+function hex2rgb(h) {
+  h = h.replace('#', '');
+  if (h.length === 3) h = h.split('').map(x => x + x).join('');
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+function mix(a, b, t) {
+  const A = hex2rgb(a), B = hex2rgb(b);
+  return 'rgb(' + A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',') + ')';
+}
+// deeper nodes fade toward the surface, like foamtree's nesting
+function fillFor(node) {
+  const top = topAncestor(node);
+  const slot = top ? SLOTS.indexOf(slotOf.get(top)) : 0;
+  const hue = top ? css.series[slot] : css.muted;
+  const relDepth = Math.max(0, node.depth - currentRoot.depth);
+  const t = Math.min(0.86, 0.40 + relDepth * 0.09);
+  const base = mix(hue, css.surface, t);
+  if (query && !node.match) return mix(css.muted, css.surface, 0.82);
+  return base;
+}
+function borderFor(node) {
+  const top = topAncestor(node);
+  const slot = top ? SLOTS.indexOf(slotOf.get(top)) : 0;
+  const hue = top ? css.series[slot] : css.muted;
+  if (query && !node.match) return mix(css.muted, css.surface, 0.6);
+  return mix(hue, css.surface, 0.18);
+}
+
+/* ---------- search ---------- */
+function markMatches(node, q) {
+  let m = node.n.toLowerCase().includes(q);
+  if (node.c) for (const c of node.c) m = markMatches(c, q) || m;
+  node.match = m;
+  return m;
+}
+function countMatches(node, q) {
+  let n = node.n.toLowerCase().includes(q) && !node.c ? 1 : 0;
+  if (node.c) for (const c of node.c) n += countMatches(c, q);
+  return n;
+}
+
+/* ---------- squarified layout ---------- */
+const HEADER_H = 17;
+const PAD = 3;
+const GAP = 1; // per-side inset → 2px visual gap between sibling fills
+
+function squarify(items, x, y, w, h) {
+  let i = 0;
+  while (i < items.length && w > 0.5 && h > 0.5) {
+    const shortSide = Math.min(w, h);
+    let rowSum = items[i].area;
+    let worst = worstRatio(items, i, i, rowSum, shortSide);
+    let j = i + 1;
+    while (j < items.length) {
+      const s = rowSum + items[j].area;
+      const wr = worstRatio(items, i, j, s, shortSide);
+      if (wr > worst) break;
+      worst = wr; rowSum = s; j++;
+    }
+    const thick = rowSum / shortSide;
+    if (w >= h) {
+      let cy = y;
+      for (let k = i; k < j; k++) {
+        const ch = items[k].area / thick;
+        items[k].rect = { x, y: cy, w: thick, h: ch };
+        cy += ch;
+      }
+      x += thick; w -= thick;
+    } else {
+      let cx = x;
+      for (let k = i; k < j; k++) {
+        const cw = items[k].area / thick;
+        items[k].rect = { x: cx, y, w: cw, h: thick };
+        cx += cw;
+      }
+      y += thick; h -= thick;
+    }
+    i = j;
+  }
+}
+function worstRatio(items, i, j, sum, shortSide) {
+  const thick = sum / shortSide;
+  let worst = 0;
+  for (let k = i; k <= j; k++) {
+    const other = items[k].area / thick;
+    worst = Math.max(worst, thick / other, other / thick);
+  }
+  return worst;
+}
+
+let laidOut = []; // nodes with .rect for the current frame, draw order = parents first
+let frame = 0;    // stamps which layout pass a node's rect belongs to
+function layout(node, x, y, w, h) {
+  node.rect = { x, y, w, h };
+  node.f = frame;
+  node.headerShown = false;
+  laidOut.push(node);
+  if (!node.c) return;
+  const showHeader = w >= 52 && h >= 38;
+  node.headerShown = showHeader;
+  const topPad = showHeader ? HEADER_H + 1 : PAD;
+  const ix = x + PAD, iy = y + topPad, iw = w - PAD * 2, ih = h - topPad - PAD;
+  if (iw < 8 || ih < 8) return;
+  const total = node[metric];
+  if (!total) return;
+  const scale = (iw * ih) / total;
+  const kids = node.c
+    .map(c => ({ node: c, area: c[metric] * scale }))
+    .filter(k => k.area >= 1);
+  if (!kids.length) return;
+  squarify(kids, ix, iy, iw, ih);
+  for (const k of kids) {
+    const r = k.rect;
+    if (!r || r.w <= GAP * 2 + 0.5 || r.h <= GAP * 2 + 0.5) continue;
+    layout(k.node, r.x + GAP, r.y + GAP, r.w - GAP * 2, r.h - GAP * 2);
+  }
+}
+
+/* ---------- rendering ---------- */
+const canvas = document.getElementById('map');
+const ctx = canvas.getContext('2d');
+let cw = 0, chh = 0;
+
+function relayout() {
+  const stage = document.getElementById('stage');
+  const dpr = devicePixelRatio || 1;
+  cw = stage.clientWidth; chh = stage.clientHeight;
+  canvas.width = Math.round(cw * dpr);
+  canvas.height = Math.round(chh * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  laidOut = [];
+  frame++;
+  layout(currentRoot, 2, 2, cw - 4, chh - 4);
+  draw();
+}
+
+function ellipsize(text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let lo = 0, hi = text.length;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (ctx.measureText(text.slice(0, mid) + '…').width <= maxW) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo ? text.slice(0, lo) + '…' : '';
+}
+
+function draw() {
+  ctx.clearRect(0, 0, cw, chh);
+  ctx.fillStyle = css.page;
+  ctx.fillRect(0, 0, cw, chh);
+  ctx.textBaseline = 'middle';
+  for (const node of laidOut) {
+    const { x, y, w, h } = node.rect;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, Math.min(3, w / 2, h / 2));
+    ctx.fillStyle = fillFor(node);
+    ctx.fill();
+    ctx.strokeStyle = borderFor(node);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    const dimmed = query && !node.match;
+    if (node.c && node.headerShown) {
+      ctx.font = '600 11px system-ui, sans-serif';
+      ctx.fillStyle = dimmed ? css.muted : css.ink;
+      const label = ellipsize(node.n, w - 12);
+      if (label) ctx.fillText(label, x + 6, y + HEADER_H / 2 + 1);
+    } else if (!node.c && w >= 34 && h >= 15) {
+      ctx.font = '11px system-ui, sans-serif';
+      ctx.fillStyle = dimmed ? css.muted : css.ink;
+      const label = ellipsize(node.n, w - 10);
+      if (label) {
+        const twoLines = h >= 32;
+        ctx.textAlign = 'center';
+        ctx.fillText(label, x + w / 2, y + h / 2 - (twoLines ? 7 : 0));
+        if (twoLines) {
+          ctx.font = '10px system-ui, sans-serif';
+          ctx.fillStyle = dimmed ? css.muted : css.ink2;
+          ctx.fillText(fmt(node[metric]), x + w / 2, y + h / 2 + 8);
+        }
+        ctx.textAlign = 'left';
+      }
+    }
+  }
+  if (hovered && hovered.rect) {
+    const { x, y, w, h } = hovered.rect;
+    ctx.beginPath();
+    ctx.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, 3);
+    ctx.strokeStyle = css.ink;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+}
+
+/* ---------- chrome ---------- */
+function renderChrome() {
+  document.getElementById('total').textContent =
+    fmt(DATA.v) + ' raw · ' + fmt(DATA.g) + ' gzip · ' + countMatches(DATA, '') + ' files';
+  const legend = document.getElementById('legend');
+  legend.innerHTML = '';
+  const addItem = (slotVar, label) => {
+    const item = document.createElement('span');
+    item.className = 'item';
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.style.background = 'var(' + slotVar + ')';
+    item.append(chip, label);
+    legend.append(item);
+  };
+  // past the named slots the tail shares one color — aggregate it in the legend too
+  const named = DATA.c.length > SLOTS.length ? SLOTS.length - 1 : DATA.c.length;
+  for (const c of DATA.c.slice(0, named)) addItem(slotOf.get(c), c.n + ' ' + fmt(c[metric]));
+  const rest = DATA.c.slice(named);
+  if (rest.length) {
+    addItem(SLOTS[SLOTS.length - 1],
+      rest.length + ' more ' + fmt(rest.reduce((s, c) => s + c[metric], 0)));
+  }
+  const crumbs = document.getElementById('crumbs');
+  crumbs.innerHTML = '';
+  const chain = [];
+  for (let n = currentRoot; n; n = n.parent) chain.unshift(n);
+  chain.forEach((n, i) => {
+    if (i) crumbs.append(' / ');
+    if (n === currentRoot) {
+      const cur = document.createElement('span');
+      cur.className = 'cur';
+      cur.textContent = n.n + ' (' + fmt(n[metric]) + ')';
+      crumbs.append(cur);
+    } else {
+      const a = document.createElement('a');
+      a.textContent = n.n;
+      a.onclick = () => { currentRoot = n; hovered = null; renderChrome(); relayout(); renderTable(); };
+      crumbs.append(a);
+    }
+  });
+  const hint = document.createElement('span');
+  hint.className = 'hint';
+  hint.textContent = 'click: zoom in · right-click: zoom out';
+  crumbs.append(hint);
+}
+
+/* ---------- interaction ---------- */
+function nodeAt(px, py) {
+  if (!currentRoot.rect) return null;
+  let n = currentRoot;
+  if (px < n.rect.x || py < n.rect.y || px > n.rect.x + n.rect.w || py > n.rect.y + n.rect.h) return null;
+  for (;;) {
+    let deeper = null;
+    if (n.c) {
+      for (const c of n.c) {
+        const r = c.rect;
+        if (r && c.f === frame && px >= r.x && py >= r.y && px <= r.x + r.w && py <= r.y + r.h) { deeper = c; break; }
+      }
+    }
+    if (!deeper) return n;
+    n = deeper;
+  }
+}
+
+const tooltip = document.getElementById('tooltip');
+function showTooltip(node, ex, ey) {
+  const rows = [
+    ['Raw size', fmt(node.v)],
+    ['Gzip size', fmt(node.g)],
+    ['% of ' + DATA.n, pct(node[metric], DATA[metric])],
+  ];
+  if (node.parent && node.parent !== DATA) {
+    rows.push(['% of ' + node.parent.n, pct(node[metric], node.parent[metric])]);
+  }
+  if (node.c) rows.unshift(['Files', String(countMatches(node, ''))]);
+  tooltip.innerHTML =
+    '<div class="tname"></div><div class="tpath"></div><table>' +
+    rows.map(r => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('') +
+    '</table>';
+  tooltip.querySelector('.tname').textContent = node.n;
+  tooltip.querySelector('.tpath').textContent = pathOf(node);
+  tooltip.style.display = 'block';
+  const stage = document.getElementById('stage');
+  const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
+  let tx = ex + 14, ty = ey + 14;
+  if (tx + tw > stage.clientWidth - 6) tx = ex - tw - 14;
+  if (ty + th > stage.clientHeight - 6) ty = ey - th - 14;
+  tooltip.style.left = Math.max(4, tx) + 'px';
+  tooltip.style.top = Math.max(4, ty) + 'px';
+}
+
+let raf = 0;
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const px = e.clientX - rect.left, py = e.clientY - rect.top;
+  const n = nodeAt(px, py);
+  if (n !== hovered) {
+    hovered = n;
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(draw);
+  }
+  if (n && n !== currentRoot) showTooltip(n, px, py);
+  else tooltip.style.display = 'none';
+});
+canvas.addEventListener('mouseleave', () => {
+  hovered = null;
+  tooltip.style.display = 'none';
+  requestAnimationFrame(draw);
+});
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const n = nodeAt(e.clientX - rect.left, e.clientY - rect.top);
+  if (!n || n === currentRoot) return;
+  // zoom one level: the child of currentRoot that contains the click
+  let target = n;
+  while (target.parent && target.parent !== currentRoot) target = target.parent;
+  if (!target.c) return; // a bare file at this level — nothing to zoom into
+  currentRoot = target;
+  hovered = null;
+  tooltip.style.display = 'none';
+  renderChrome(); relayout(); renderTable();
+});
+canvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  if (currentRoot.parent) {
+    currentRoot = currentRoot.parent;
+    hovered = null;
+    tooltip.style.display = 'none';
+    renderChrome(); relayout(); renderTable();
+  }
+});
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && currentRoot !== DATA) {
+    currentRoot = DATA;
+    hovered = null;
+    renderChrome(); relayout(); renderTable();
+  }
+});
+
+/* ---------- controls ---------- */
+function setMetric(m) {
+  metric = m;
+  document.getElementById('btn-raw').setAttribute('aria-pressed', String(m === 'v'));
+  document.getElementById('btn-gzip').setAttribute('aria-pressed', String(m === 'g'));
+  renderChrome(); relayout(); renderTable();
+}
+document.getElementById('btn-raw').onclick = () => setMetric('v');
+document.getElementById('btn-gzip').onclick = () => setMetric('g');
+
+function setView(table) {
+  tableMode = table;
+  document.getElementById('btn-map').setAttribute('aria-pressed', String(!table));
+  document.getElementById('btn-table').setAttribute('aria-pressed', String(table));
+  document.getElementById('tablepanel').style.display = table ? 'block' : 'none';
+  if (table) renderTable();
+}
+document.getElementById('btn-map').onclick = () => setView(false);
+document.getElementById('btn-table').onclick = () => setView(true);
+
+const TABLE_LIMIT = 300;
+function renderTable() {
+  if (!tableMode) return;
+  const leaves = [];
+  (function collect(n) {
+    if (n.c) n.c.forEach(collect);
+    else leaves.push(n);
+  })(currentRoot);
+  leaves.sort((a, b) => b[metric] - a[metric]);
+  const shown = leaves.slice(0, TABLE_LIMIT);
+  const panel = document.getElementById('tablepanel');
+  const rows = shown.map(n =>
+    '<tr><td class="path">' + escapeHtml(pathOf(n)) + '</td>' +
+    '<td class="num">' + fmt(n.v) + '</td>' +
+    '<td class="num">' + fmt(n.g) + '</td>' +
+    '<td class="num">' + pct(n[metric], currentRoot[metric]) + '</td></tr>'
+  ).join('');
+  panel.innerHTML =
+    '<p class="note">Largest files under <strong>' + escapeHtml(pathOf(currentRoot)) + '</strong>, by ' +
+    (metric === 'v' ? 'raw' : 'gzip') + ' size' +
+    (leaves.length > TABLE_LIMIT ? ' — showing ' + TABLE_LIMIT + ' of ' + leaves.length : '') +
+    '</p><table><thead><tr><th>File</th><th class="num">Raw</th><th class="num">Gzip</th>' +
+    '<th class="num">% of ' + escapeHtml(currentRoot.n) + '</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+document.getElementById('search').addEventListener('input', e => {
+  query = e.target.value.trim().toLowerCase();
+  const mc = document.getElementById('matchcount');
+  if (query) {
+    markMatches(DATA, query);
+    mc.textContent = countMatches(DATA, query) + ' files match';
+  } else {
+    mc.textContent = '';
+  }
+  draw();
+});
+
+/* ---------- boot / theme reactivity ---------- */
+function refreshTheme() { readTheme(); renderChrome(); draw(); }
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', refreshTheme);
+new MutationObserver(refreshTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+addEventListener('resize', () => { relayout(); });
+
+document.getElementById('title').textContent = DATA.n;
+readTheme();
+renderChrome();
+relayout();
+</script>
+</body>
+</html>
