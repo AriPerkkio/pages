@@ -1,25 +1,50 @@
 /* eslint-disable */
-// Loaded in <head> so a previously picked theme applies before first paint.
-// Without a stored choice, the report's `theme` option applies, then the
-// color scheme of a page embedding the report, and without those, base.css
-// follows `prefers-color-scheme`.
 const storageKey = "istanbul-html-report-theme";
 const themes = ["light", "dark", "legacy"];
 const root = document.documentElement;
 const media = window.matchMedia("(prefers-color-scheme: dark)");
 
-// the html report's `theme` option, used until the viewer picks a theme
-const defaultTheme = themes.includes(root.dataset.defaultTheme) ? root.dataset.defaultTheme : null;
-
-// A same-origin page embedding the report, like Vitest UI, stands in for the
-// viewer's preference. Firefox passes its color-scheme on to the report as
-// `prefers-color-scheme`, but Chromium and WebKit keep following the OS.
+// A same-origin page embedding the report, like Vitest UI, owns the theme:
 const embedder = findEmbedder();
 
+if (embedder) {
+  // hides the theme picker
+  root.dataset.themeEmbedded = "";
+}
+
+// Firefox gives every file:// page its own localStorage, but shares cookies
+// between them. Chromium shares localStorage, but doesn't keep file://
+// cookies. So file:// pages keep the theme in a cookie where cookies work,
+// and never read localStorage there, which could be a stale per-page value.
+const useCookie = location.protocol === "file:" && cookiesWork();
+const cookiePattern = new RegExp(`(?:^|; )${storageKey}=(\\w+)`);
+
+let shownTheme = root.dataset.theme ?? null;
+
+const syncAnimated = () => sync(true);
+sync();
+
+document.addEventListener("DOMContentLoaded", () => {
+  sync();
+
+  document.getElementById("themeSelect")?.addEventListener("change", (event) => {
+    storeTheme(event.target.value);
+    showTheme(event.target.value, true);
+  });
+});
+
+window.addEventListener("pageshow", () => sync());
+window.addEventListener("storage", syncAnimated);
+media.addEventListener("change", syncAnimated);
+
+if (embedder) {
+  // follows the embedding page's theme toggle, e.g. a class on its <html>
+  new MutationObserver(syncAnimated).observe(embedder, { attributes: true });
+}
+
 function findEmbedder() {
-  // Reading a cross-origin parent fails, and WebKit logs an error for even
-  // trying, so skip file:// pages and parents known to be cross-origin.
   const ancestor = location.ancestorOrigins?.[0];
+
   if (
     window.parent === window ||
     location.protocol === "file:" ||
@@ -27,6 +52,7 @@ function findEmbedder() {
   ) {
     return null;
   }
+
   try {
     return window.frameElement ? window.parent.document.documentElement : null;
   } catch {
@@ -39,35 +65,48 @@ function embedderTheme() {
   if (!embedder) {
     return null;
   }
+
   const scheme = window.parent.getComputedStyle(embedder).colorScheme;
   const dark = /\bdark\b/.test(scheme);
   const light = /\blight\b/.test(scheme);
+
   // "normal" or "light dark" leave the choice to the OS preference
   return dark === light ? null : dark ? "dark" : "light";
 }
 
-// Firefox gives every file:// page its own localStorage, but shares cookies
-// between them. Chromium shares localStorage but has no file:// cookies.
-// So file:// pages keep the theme in both, preferring the cookie.
-const useCookie = location.protocol === "file:";
-const cookiePattern = new RegExp(`(?:^|; )${storageKey}=(\\w+)`);
+function cookiesWork() {
+  const probe = `${storageKey}-probe=1`;
+  document.cookie = `${probe}; path=/; SameSite=Lax`;
+
+  const works = document.cookie.includes(probe);
+  document.cookie = `${probe}; path=/; max-age=0; SameSite=Lax`;
+
+  return works;
+}
 
 function storedTheme() {
-  let stored = useCookie ? document.cookie.match(cookiePattern)?.[1] : null;
-  if (!stored) {
+  let stored = null;
+
+  if (useCookie) {
+    stored = document.cookie.match(cookiePattern)?.[1];
+  } else {
     try {
       stored = localStorage.getItem(storageKey);
     } catch {
       // storage may be unavailable
     }
   }
+
   return themes.includes(stored) ? stored : null;
 }
 
 function storeTheme(theme) {
   if (useCookie) {
     document.cookie = `${storageKey}=${theme}; path=/; max-age=31536000; SameSite=Lax`;
+
+    return;
   }
+
   try {
     localStorage.setItem(storageKey, theme);
   } catch {
@@ -75,35 +114,34 @@ function storeTheme(theme) {
   }
 }
 
-// Applies the stored theme to the page and the picker. Re-run whenever the
-// page is shown, as pages restored from the back/forward cache, or from
-// another tab's change, would otherwise keep a stale theme.
-function sync() {
-  const theme = storedTheme() || defaultTheme || embedderTheme();
-  if (theme) {
-    root.dataset.theme = theme;
-  } else {
-    delete root.dataset.theme;
-  }
+function showTheme(theme, animate) {
+  shownTheme = theme;
 
-  const select = document.getElementById("themeSelect");
-  if (select) {
-    select.value = theme || (media.matches ? "dark" : "light");
+  const update = () => {
+    if (theme) {
+      root.dataset.theme = theme;
+    } else {
+      delete root.dataset.theme;
+    }
+  };
+
+  if (animate && document.startViewTransition) {
+    document.startViewTransition(update);
+  } else {
+    update();
   }
 }
 
-sync();
-document.addEventListener("DOMContentLoaded", () => {
-  sync();
-  document.getElementById("themeSelect").addEventListener("change", (event) => {
-    root.dataset.theme = event.target.value;
-    storeTheme(event.target.value);
-  });
-});
-window.addEventListener("pageshow", sync);
-window.addEventListener("storage", sync);
-media.addEventListener("change", sync);
-if (embedder) {
-  // follows the embedding page's theme toggle, e.g. a class on its <html>
-  new MutationObserver(sync).observe(embedder, { attributes: true });
+function sync(animate = false) {
+  const theme = embedder ? embedderTheme() : storedTheme();
+
+  if (theme !== shownTheme) {
+    showTheme(theme, animate);
+  }
+
+  const select = document.getElementById("themeSelect");
+
+  if (select) {
+    select.value = theme || (media.matches ? "dark" : "light");
+  }
 }

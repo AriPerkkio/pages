@@ -523,6 +523,10 @@ pre.prettyprint {
 .theme-select {
   float: right;
 }
+/* the embedding page, e.g. Vitest UI, owns the theme, see theme.js */
+:root[data-theme-embedded] .theme-select {
+  display: none;
+}
 .theme-select select {
   font: inherit;
   color: var(--color-text);
@@ -591,4 +595,17 @@ pre.prettyprint {
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 3px 8px;
+}
+
+/* crossfade between themes, started by theme.js */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 200ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(root),
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
 }

@@ -34,16 +34,16 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">73.52% </span>
+                <span class="strong">73.33% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>100/136</span>
+                <span class='fraction'>99/135</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">49.05% </span>
+                <span class="strong">50.9% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>26/53</span>
+                <span class='fraction'>28/55</span>
             </div>
         
             
@@ -55,9 +55,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">73.13% </span>
+                <span class="strong">72.93% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>98/134</span>
+                <span class='fraction'>97/133</span>
             </div>
         
             
@@ -553,18 +553,7 @@
 <a name='L477'></a><a href='#L477'>477</a>
 <a name='L478'></a><a href='#L478'>478</a>
 <a name='L479'></a><a href='#L479'>479</a>
-<a name='L480'></a><a href='#L480'>480</a>
-<a name='L481'></a><a href='#L481'>481</a>
-<a name='L482'></a><a href='#L482'>482</a>
-<a name='L483'></a><a href='#L483'>483</a>
-<a name='L484'></a><a href='#L484'>484</a>
-<a name='L485'></a><a href='#L485'>485</a>
-<a name='L486'></a><a href='#L486'>486</a>
-<a name='L487'></a><a href='#L487'>487</a>
-<a name='L488'></a><a href='#L488'>488</a>
-<a name='L489'></a><a href='#L489'>489</a>
-<a name='L490'></a><a href='#L490'>490</a>
-<a name='L491'></a><a href='#L491'>491</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L480'></a><a href='#L480'>480</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -706,10 +695,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">17x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -902,11 +887,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">14x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">14x</span>
 <span class="cline-any cline-yes">14x</span>
 <span class="cline-any cline-yes">14x</span>
 <span class="cline-any cline-yes">14x</span>
@@ -963,10 +945,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">17x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1093,8 +1071,9 @@ export interface HtmlOptions {
   /** skip nodes with no coverage */
   skipEmpty?: boolean;
   /**
-   * theme shown until the viewer picks one in the report, defaults to
-   * following the viewer's light/dark preference
+   * fixes the report's theme and hides the theme picker; when unset, viewers
+   * pick a theme in the report, which otherwise follows their light/dark
+   * preference, or the page embedding the report, like Vitest UI
    */
   theme?: HtmlTheme;
 }
@@ -1102,8 +1081,7 @@ export interface HtmlOptions {
 /** data threaded through the header/footer templates while rendering a page */
 interface TemplateData {
   datetime: string;
-  defaultTheme: HtmlTheme | undefined;
-  themePicker: boolean;
+  fixedTheme: HtmlTheme | undefined;
   entity: string;
   metrics: CoverageSummary;
   reportClass: string;
@@ -1149,7 +1127,7 @@ function htmlHead(details: TemplateData): string {
     &lt;link rel="stylesheet" href="${html.escape(details.base.css)}" /&gt;
     &lt;link rel="shortcut icon" type="image/x-icon" href="${html.escape(details.favicon)}" /&gt;
     &lt;meta name="viewport" content="width=device-width, initial-scale=1" /&gt;
-    ${details.themePicker ? `&lt;script src="${html.escape(details.theme.js)}"&gt;&lt;/script&gt;` : ""}
+    ${details.fixedTheme ? "" : `&lt;script src="${html.escape(details.theme.js)}"&gt;&lt;/script&gt;`}
     &lt;style type='text/css'&gt;
         .coverage-summary .sorter {
             background-image: url(${html.escape(details.sorter.image)});
@@ -1197,16 +1175,12 @@ function headerTemplate(details: TemplateData): string {
 &nbsp;
   return `
 &lt;!doctype html&gt;
-&lt;html lang="en"${
-    details.defaultTheme
-      ? ` data-theme="${html.escape(details.defaultTheme)}" data-default-theme="${html.escape(details.defaultTheme)}"`
-      : ""
-  }&gt;
+&lt;html lang="en"${details.fixedTheme ? ` data-theme="${html.escape(details.fixedTheme)}"` : ""}&gt;
 ${htmlHead(details)}
 &lt;body&gt;
 &lt;div class='wrapper'&gt;
     &lt;div class='pad1'&gt;
-        ${details.themePicker ? themePickerTemplate : ""}
+        ${details.fixedTheme ? "" : themePickerTemplate}
         &lt;h1&gt;${details.pathHtml}&lt;/h1&gt;
         &lt;div class='clearfix'&gt;
             ${metricsTemplate(details.metrics.statements, "Statements")}
@@ -1390,8 +1364,6 @@ class HtmlReport extends ReportBase {
   declare date: string;
   declare skipEmpty: boolean | undefined;
   declare theme: HtmlTheme | undefined;
-  /** when false, pages render only `theme`, without the picker and `theme.js` */
-  declare themePicker: boolean;
 &nbsp;
   constructor(opts: HtmlOptions) {
     super();
@@ -1401,8 +1373,7 @@ class HtmlReport extends ReportBase {
     this.subdir = opts.subdir || "";
     this.date = new Date().toISOString();
     this.skipEmpty = opts.skipEmpty;
-    this.theme = opts.theme;
-    this.themePicker = true;
+    this.theme = ["light", "dark", "legacy"].includes(opts.theme!) ? opts.theme : undefined;
   }
 &nbsp;
   getBreadcrumbHtml(node: ReportNode): string {
@@ -1452,11 +1423,7 @@ class HtmlReport extends ReportBase {
   }
 &nbsp;
   getTemplateData(): TemplateData {
-    return {
-      datetime: this.date,
-      defaultTheme: this.theme,
-      themePicker: this.themePicker,
-    } as TemplateData;
+    return { datetime: this.date, fixedTheme: this.theme } as TemplateData;
   }
 &nbsp;
   getWriter(context: Context): FileWriter {
@@ -1551,7 +1518,7 @@ export default HtmlReport;
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-27T11:29:43.451Z
+                at 2026-10-30T10:26:06.357Z
             </div>
         <script src="../../../../prettify.js"></script>
         <script>
