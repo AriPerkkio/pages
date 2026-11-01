@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF Merger</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f5f2;
+    --surface: #ffffff;
+    --text: #1d1c1a;
+    --muted: #6b6862;
+    --line: #dcd9d2;
+    --accent: #b3341f;
+    --accent-text: #ffffff;
+    --error: #a3241a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #191816;
+      --surface: #232220;
+      --text: #eeece7;
+      --muted: #a09c94;
+      --line: #3a3835;
+      --accent: #e0644c;
+      --accent-text: #191816;
+      --error: #f08a7c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 48px 16px;
+  }
+  h1 { margin: 0 0 24px; font-size: 24px; font-weight: 650; letter-spacing: -0.01em; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  #drop {
+    display: block;
+    padding: 40px 16px;
+    border: 1.5px dashed var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--muted);
+    text-align: center;
+    cursor: pointer;
+  }
+  #drop:hover, #drop.over { border-color: var(--accent); color: var(--text); }
+  #drop:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #drop strong { color: var(--text); font-weight: 600; }
+  #input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+
+  #list { list-style: none; margin: 16px 0 0; padding: 0; }
+  #list li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 6px 6px 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  #list li[draggable="true"] { cursor: grab; }
+  #list li.dragging { opacity: 0.4; }
+  .pos { width: 1.5em; flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .pages { flex: none; color: var(--muted); font-size: 14px; }
+  .icon {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--muted);
+  }
+  .icon:hover:not(:disabled) { background: var(--bg); color: var(--text); }
+  .icon:disabled { opacity: 0.3; cursor: default; }
+
+  #merge {
+    display: block;
+    width: 100%;
+    margin-top: 16px;
+    padding: 12px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--accent-text);
+    font-weight: 600;
+  }
+  #merge:disabled { opacity: 0.45; cursor: default; }
+  #status { min-height: 1.5em; margin: 12px 0 0; color: var(--muted); font-size: 14px; }
+  #status.error { color: var(--error); }
+</style>
+</head>
+<body>
+<main>
+  <h1>PDF Merger</h1>
+
+  <label id="drop">
+    <input id="input" type="file" accept="application/pdf,.pdf" multiple>
+    <strong>Choose PDFs</strong> or drop them here
+  </label>
+
+  <ol id="list"></ol>
+
+  <button id="merge" disabled>Merge and download</button>
+  <p id="status" role="status"></p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"
+        integrity="sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI"
+        crossorigin="anonymous"></script>
+<script>
+  const drop = document.getElementById('drop');
+  const input = document.getElementById('input');
+  const list = document.getElementById('list');
+  const mergeButton = document.getElementById('merge');
+  const statusLine = document.getElementById('status');
+
+  // Each item: { name, doc } — doc stays null until the file has been parsed.
+  let items = [];
+  let merging = false;
+  let draggedItem = null;
+
+  function setStatus(message, isError = false) {
+    statusLine.textContent = message;
+    statusLine.classList.toggle('error', isError);
+  }
+
+  function describeLoadError(err) {
+    return /encrypt/i.test(err.message) ? 'it is password-protected' : 'it is not a readable PDF';
+  }
+
+  async function addFiles(files) {
+    const pdfs = [...files].filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+    if (pdfs.length < files.length) setStatus('Skipped files that are not PDFs.', true);
+    else setStatus('');
+    if (!pdfs.length) return;
+
+    if (!window.PDFLib) {
+      setStatus('The PDF library failed to load. Check your connection and reload.', true);
+      return;
+    }
+
+    // Add rows up front so the list keeps selection order however parsing finishes.
+    const added = pdfs.map(file => ({ name: file.name, doc: null }));
+    items.push(...added);
+    render();
+
+    await Promise.all(pdfs.map(async (file, i) => {
+      const item = added[i];
+      try {
+        item.doc = await PDFLib.PDFDocument.load(await file.arrayBuffer());
+      } catch (err) {
+        console.error(file.name, err);
+        items = items.filter(other => other !== item);
+        setStatus(`Skipped ${file.name}: ${describeLoadError(err)}.`, true);
+      }
+      render();
+    }));
+  }
+
+  function move(item, offset) {
+    const from = items.indexOf(item);
+    const to = from + offset;
+    if (to < 0 || to >= items.length) return;
+    items.splice(from, 1);
+    items.splice(to, 0, item);
+    render();
+  }
+
+  function iconButton(symbol, label, disabled, onClick) {
+    const button = document.createElement('button');
+    button.className = 'icon';
+    button.textContent = symbol;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.disabled = disabled;
+    button.addEventListener('click', onClick);
+    return button;
+  }
+
+  function createRow(item, index) {
+    const row = document.createElement('li');
+    row.draggable = true;
+
+    const pos = document.createElement('span');
+    pos.className = 'pos';
+    pos.textContent = index + 1;
+
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = item.name;
+    name.title = item.name;
+
+    const pages = document.createElement('span');
+    pages.className = 'pages';
+    if (item.doc) {
+      const count = item.doc.getPageCount();
+      pages.textContent = `${count} ${count === 1 ? 'page' : 'pages'}`;
+    } else {
+      pages.textContent = 'Reading…';
+    }
+
+    row.append(
+      pos,
+      name,
+      pages,
+      iconButton('↑', `Move ${item.name} up`, index === 0, () => move(item, -1)),
+      iconButton('↓', `Move ${item.name} down`, index === items.length - 1, () => move(item, 1)),
+      iconButton('×', `Remove ${item.name}`, false, () => {
+        items = items.filter(other => other !== item);
+        setStatus('');
+        render();
+      }),
+    );
+
+    row.addEventListener('dragstart', event => {
+      draggedItem = item;
+      event.dataTransfer.effectAllowed = 'move';
+      row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', () => {
+      draggedItem = null;
+      render();
+    });
+    row.addEventListener('dragover', event => {
+      if (!draggedItem) return;
+      event.preventDefault();
+      if (draggedItem !== item) {
+        const from = items.indexOf(draggedItem);
+        items.splice(from, 1);
+        items.splice(index, 0, draggedItem);
+        render();
+      }
+    });
+    return row;
+  }
+
+  function render() {
+    list.replaceChildren(...items.map((item, index) => {
+      const row = createRow(item, index);
+      row.classList.toggle('dragging', item === draggedItem);
+      return row;
+    }));
+    const ready = items.length >= 2 && items.every(item => item.doc);
+    mergeButton.disabled = !ready || merging;
+  }
+
+  async function merge() {
+    merging = true;
+    render();
+    setStatus('Merging…');
+    try {
+      const merged = await PDFLib.PDFDocument.create();
+      for (const { doc } of items) {
+        const pages = await merged.copyPages(doc, doc.getPageIndices());
+        pages.forEach(page => merged.addPage(page));
+      }
+      const bytes = await merged.save();
+
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'merged.pdf';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+
+      const count = merged.getPageCount();
+      setStatus(`Downloaded merged.pdf (${count} ${count === 1 ? 'page' : 'pages'}).`);
+    } catch (err) {
+      console.error(err);
+      setStatus(`Could not merge: ${err.message}`, true);
+    } finally {
+      merging = false;
+      render();
+    }
+  }
+
+  input.addEventListener('change', () => {
+    addFiles(input.files);
+    input.value = ''; // Lets the same file be picked again.
+  });
+
+  // Stop a missed drop from navigating away and discarding the list.
+  window.addEventListener('dragover', event => event.preventDefault());
+  window.addEventListener('drop', event => event.preventDefault());
+
+  drop.addEventListener('dragover', event => {
+    if (!draggedItem) drop.classList.add('over');
+  });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', event => {
+    drop.classList.remove('over');
+    if (!draggedItem) addFiles(event.dataTransfer.files);
+  });
+
+  mergeButton.addEventListener('click', merge);
+</script>
+</body>
+</html>
